@@ -412,6 +412,26 @@ let allow_collisions (id : id) : bool =
       true
   | _ -> false
 
+(** Insert into [names_maps] without running the collision/sanity checks. Used
+    when registering names that are deliberately shared across multiple ids,
+    e.g. the canonical name of a builtin type across different monomorphized
+    instantiations (each with its own [TAdtId]). *)
+let names_maps_add_unchecked (id : id) (span : Meta.span option) (name : string)
+    (nm : names_maps) : names_maps =
+  if allow_collisions id then
+    {
+      nm with
+      unsafe_names_map = unsafe_names_map_add id name nm.unsafe_names_map;
+    }
+  else
+    let strict_names_map =
+      if strict_collisions id then
+        names_map_add_unchecked (id, span) name nm.strict_names_map
+      else nm.strict_names_map
+    in
+    let names_map = names_map_add_unchecked (id, span) name nm.names_map in
+    { nm with strict_names_map; names_map }
+
 (** The [id_to_string] function to print nice debugging messages if there are
     collisions *)
 let names_maps_add (id_to_string : id -> string) (id : id)
@@ -759,8 +779,8 @@ let id_to_string (span : Meta.span option) (id : id) (ctx : extraction_ctx) :
       in
       trait_decl_id_to_string trait_decl_id ^ ", method name: " ^ method_name
 
-let ctx_add (span : Meta.span) (id : id) (name : string) (ctx : extraction_ctx)
-    : extraction_ctx =
+let ctx_add ?(allow_collisions : bool = false) (span : Meta.span) (id : id)
+    (name : string) (ctx : extraction_ctx) : extraction_ctx =
   (* In Lean, identifiers cannot contain "-". We wrap any dot-separated
      component that contains a hyphen in French quotes (« ... »). *)
   let name =
@@ -783,10 +803,15 @@ let ctx_add (span : Meta.span) (id : id) (name : string) (ctx : extraction_ctx)
         String.concat "." parts
     | _ -> name
   in
-  (* Actually add the name *)
+  (* Actually add the name. When [allow_collisions] is set, multiple ids may
+     share this name (e.g. the canonical name of a builtin type registered
+     for several monomorphized instantiations); skip the collision/sanity
+     checks in that case. *)
   let id_to_string (id : id) : string = id_to_string (Some span) id ctx in
   let names_maps =
-    names_maps_add id_to_string id (Some span) name ctx.names_maps
+    if allow_collisions then
+      names_maps_add_unchecked id (Some span) name ctx.names_maps
+    else names_maps_add id_to_string id (Some span) name ctx.names_maps
   in
   { ctx with names_maps }
 
@@ -2121,9 +2146,12 @@ let ctx_compute_var_basename (span : Meta.span) (ctx : extraction_ctx)
               (* Derive the var name from the last ident of the type name
                  Ex.: ["hashmap"; "HashMap"] ~~> "HashMap" -> "hash_map" -> "hm"
               *)
-              (* The name shouldn't be empty, and its last element (after we remove
-                 the target architecture suffix) should be an ident *)
+              (* The name shouldn't be empty, and its last element (after we
+                 remove the target architecture suffix and any trailing
+                 monomorphization tail from [--monomorphize]) should be an
+                 ident *)
               let name = LlbcAstUtils.strip_target_suffix def.item_meta.name in
+              let name = LlbcAstUtils.strip_instantiated_suffix name in
               let cl = Collections.List.last name in
               name_from_type_ident (TypesUtils.as_ident cl))
       | TVar _ -> (

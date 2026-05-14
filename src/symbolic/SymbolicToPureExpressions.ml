@@ -424,6 +424,13 @@ and translate_function_call_aux (call : S.call) (e : S.expr) (ctx : bs_ctx) :
                   let name =
                     LlbcAstUtils.strip_target_suffix decl.item_meta.name
                   in
+                  (* Charon's [--monomorphize] appends a trailing
+                     [PeInstantiated] element to function names. For the
+                     purpose of generating a backward-function base name we
+                     don't care about the instantiation arguments, so skip
+                     any trailing [PeInstantiated] elements before looking
+                     at the underlying identifier. *)
+                  let name = LlbcAstUtils.strip_instantiated_suffix name in
                   match Collections.List.last name with
                   | PeIdent (s, _) -> s
                   | PeImpl _ -> "impl"

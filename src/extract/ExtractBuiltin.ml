@@ -116,7 +116,16 @@ let builtin_types () : Pure.builtin_type_info list =
      in
      { rust_name; extract_name; keep_params; mut_regions; body_info }
    in
-   []
+   [
+     (* PhantomData — zero-sized marker type. Registered for all backends
+        because every Rust crate using a type-tag pattern relies on it and
+        Charon's [--monomorphize] surfaces it in struct fields. The Lean
+        side provides a matching [core.marker.PhantomData] structure in
+        [Aeneas/Std/Core/Marker.lean]; for other backends we extract it as
+        an empty struct under the same fully qualified name. *)
+     mk_type "core::marker::PhantomData"
+       ~custom_name:(Some "core::marker::PhantomData") ~kind:(KStruct []) ();
+   ]
    @ mk_not_lean
        [
          (* Alloc *)

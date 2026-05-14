@@ -100,6 +100,20 @@ let strip_target_suffix (n : name) : name =
   | Types.PeTarget _ :: rest -> List.rev rest
   | _ -> n
 
+(** Strip all trailing [PeInstantiated] elements from a name.
+
+    Charon's [--monomorphize] pass appends [PeInstantiated] to a name for each
+    monomorphized instantiation. Pattern generation in [NameMatcher] drops
+    [PeInstantiated] elements entirely (they don't participate in pattern
+    matching) — and helpers like [Collections.List.last] / [TypesUtils.as_ident]
+    expect the trailing element to be a [PeIdent] (or [PeImpl]). Strip the
+    trailing [PeInstantiated]s to expose the underlying identifier. *)
+let rec strip_instantiated_suffix (n : name) : name =
+  match List.rev n with
+  | Types.PeInstantiated _ :: rest ->
+      strip_instantiated_suffix (List.rev rest)
+  | _ -> n
+
 (** Extract and strip any trailing [PeTarget] element from a name, returning the
     cleaned name and an optional target suffix string (with [-] replaced by
     [_]). *)

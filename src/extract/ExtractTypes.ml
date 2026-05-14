@@ -759,13 +759,19 @@ let extract_type_decl_register_names (ctx : extraction_ctx) (def : type_decl) :
         }
     | _ -> ctx
   in
-  (* Compute and register the type decl name *)
+  (* Compute and register the type decl name. Builtin types may be registered
+     once per monomorphized instantiation but all share the same canonical
+     name; pass [~allow_collisions] in that case so subsequent registrations
+     don't trigger the "Name clash detected" error. *)
   let def_name =
     match def.builtin_info with
     | None -> ctx_compute_type_decl_name ctx def
     | Some info -> info.extract_name
   in
-  let ctx = ctx_add span (TypeId (TAdtId def.def_id)) def_name ctx in
+  let allow_collisions = Option.is_some def.builtin_info in
+  let ctx =
+    ctx_add ~allow_collisions span (TypeId (TAdtId def.def_id)) def_name ctx
+  in
   (* Compute and register:
    * - the variant names, if this is an enumeration
    * - the field names, if this is a structure
@@ -846,7 +852,7 @@ let extract_type_decl_register_names (ctx : extraction_ctx) (def : type_decl) :
           let ctx =
             List.fold_left
               (fun ctx (fid, name) ->
-                ctx_add span
+                ctx_add ~allow_collisions span
                   (FieldId (TAdtId def.def_id, fid))
                   (mk_field_name name) ctx)
               ctx field_names
@@ -861,7 +867,8 @@ let extract_type_decl_register_names (ctx : extraction_ctx) (def : type_decl) :
             | _ -> ctx
           in
           (* Add the constructor name *)
-          ctx_add span (StructId (TAdtId def.def_id)) cons_name ctx
+          ctx_add ~allow_collisions span (StructId (TAdtId def.def_id)) cons_name
+            ctx
       | Enum variants ->
           let variant_names =
             match def.builtin_info with
@@ -900,7 +907,8 @@ let extract_type_decl_register_names (ctx : extraction_ctx) (def : type_decl) :
           in
           List.fold_left
             (fun ctx (vid, vname) ->
-              ctx_add span (VariantId (TAdtId def.def_id, vid)) vname ctx)
+              ctx_add ~allow_collisions span
+                (VariantId (TAdtId def.def_id, vid)) vname ctx)
             ctx variant_names
       | Opaque ->
           (* Nothing to do *)
