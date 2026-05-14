@@ -1929,6 +1929,32 @@ let ctx_compute_trait_impl_name_raw (ctx : extraction_ctx)
                         opt_ctx_prepare_name decl.item_meta ctx
                           decl.item_meta.name
                       in
+                      (* When [-mono-name-suffix] is on and the type's name
+                         ends with a [PeInstantiated] element (as produced by
+                         Charon's [--monomorphize]), strip the element AND
+                         splice its binder into [params]/[generics] before
+                         handing the name to [name_with_generics_to_simple_name].
+                         Two reasons:
+                         (1) [name_with_generics_to_pattern] attaches the
+                             explicit generics to the LAST path element and
+                             drops trailing [PeInstantiated]s — so without this
+                             strip the type args never make it into the
+                             resulting name.
+                         (2) After [--monomorphize], the self type's [generics]
+                             is empty because the args are baked into the
+                             type_decl id — the binder's value is where the
+                             type args actually live.
+                         See aeneas method-suffix follow-up to issue #1032. *)
+                      let name, params, generics =
+                        if !Config.mono_name_suffix then
+                          match List.rev name with
+                          | T.PeInstantiated binder :: rev_rest ->
+                              ( List.rev rev_rest,
+                                binder.binder_params,
+                                binder.binder_value )
+                          | _ -> (name, params, generics)
+                        else (name, params, generics)
+                      in
                       name_with_generics_to_simple_name ctx.trans_ctx name
                         params generics
                       |> flatten_name)

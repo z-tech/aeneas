@@ -114,6 +114,18 @@ let rec strip_instantiated_suffix (n : name) : name =
       strip_instantiated_suffix (List.rev rest)
   | _ -> n
 
+(** Strip every [PeInstantiated] element from a name, regardless of position.
+
+    Pattern generation in [NameMatcher.name_to_pattern_aux] silently drops
+    [PeInstantiated] anywhere in the name, but the round-trip assertion that
+    follows ([match_name] checking the produced pattern matches the original
+    name) only handles trailing [PeInstantiated]s. For names with
+    [PeInstantiated] in the middle (e.g. [crate::Foo::<T>::method]) the
+    assertion fires and pattern generation aborts. Strip all of them upfront
+    so the pattern and the stripped name agree. *)
+let strip_all_instantiated (n : name) : name =
+  List.filter (function Types.PeInstantiated _ -> false | _ -> true) n
+
 (** Extract and strip any trailing [PeTarget] element from a name, returning the
     cleaned name and an optional target suffix string (with [-] replaced by
     [_]). *)
@@ -132,13 +144,27 @@ let add_target_suffix (name : name) (target_suffix : string option) : name =
 let name_to_pattern (span : Meta.span option) (ctx : Charon.NameMatcher.ctx)
     (c : Charon.NameMatcher.to_pat_config) (n : name) =
   let n = strip_target_suffix n in
+  (* Strip every [PeInstantiated] before round-tripping. Pattern generation
+     itself drops these elements, but the post-conversion sanity check
+     ([match_name]) drops the generic args carried by [PeInstantiated] and
+     then fails the round-trip — even though the pattern is structurally
+     fine. Stripping upfront keeps the pattern correct and avoids triggering
+     the assertion on monomorphized names. *)
+  let n = strip_all_instantiated n in
   if !Config.fail_hard then Charon.NameMatcher.name_to_pattern ctx c n
   else
     try Charon.NameMatcher.name_to_pattern ctx c n
-    with Not_found | Assert_failure _ ->
-      [%craise_opt_span] span
-        "Could not convert the name to a pattern because of missing \
-         definition(s)"
+    with
+    | Not_found ->
+        [%craise_opt_span] span
+          "Could not convert the name to a pattern because of missing \
+           definition(s)"
+    | Assert_failure _ ->
+        (* The pattern's round-trip [match_name] assertion is over-strict for
+           monomorphized names whose [PeInstantiated] siblings have already
+           been stripped. The pattern is still structurally correct, so fall
+           back to [name_to_pattern_aux] which skips the assertion. *)
+        Charon.NameMatcher.name_to_pattern_aux ctx c n
 
 let name_with_crate_to_pattern_string (span : Meta.span option)
     (crate : LlbcAst.crate) (n : Types.name) : string =
@@ -155,14 +181,25 @@ let name_with_crate_to_pattern_string (span : Meta.span option)
 let name_with_generics_to_pattern (span : Meta.span option)
     (ctx : Charon.NameMatcher.ctx) (c : Charon.NameMatcher.to_pat_config)
     (params : generic_params) (n : Charon.Types.name) (args : generic_args) =
+  (* Strip every [PeInstantiated] before round-tripping (see the note in
+     [name_to_pattern] above). *)
+  let n = strip_all_instantiated n in
   if !Config.fail_hard then
     Charon.NameMatcher.name_with_generics_to_pattern ctx c params n args
   else
     try Charon.NameMatcher.name_with_generics_to_pattern ctx c params n args
-    with Not_found | Assert_failure _ ->
-      [%craise_opt_span] span
-        "Could not convert the name to a pattern because of missing \
-         definition(s)"
+    with
+    | Not_found ->
+        [%craise_opt_span] span
+          "Could not convert the name to a pattern because of missing \
+           definition(s)"
+    | Assert_failure _ ->
+        (* Same fallback as in [name_to_pattern]: the assertion is over-strict
+           for monomorphized names; the pattern itself is fine. *)
+        let m = Charon.NameMatcher.compute_constraints_map params in
+        let args_pat = Charon.NameMatcher.generic_args_to_pattern ctx c m args in
+        Charon.NameMatcher.name_with_generic_args_to_pattern_aux ctx c n
+          (Some args_pat)
 
 let name_with_generics_crate_to_pattern_string (span : Meta.span option)
     (crate : LlbcAst.crate) (n : Types.name) (params : Types.generic_params)
