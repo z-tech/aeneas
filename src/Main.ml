@@ -208,6 +208,12 @@ let () =
          collisions with field projectors. Example: the `len` method in `impl \
          Struct { fn len(&self) -> usize { ... } }` would be named \
          `Struct.impl.len`." );
+      ( "-mono-name-suffix",
+        Arg.Set mono_name_suffix,
+        " When Charon's --monomorphize pass produces multiple instantiations \
+         of the same generic item, append a suffix derived from the \
+         instantiation's type arguments to the extracted name. Off by \
+         default; behavior of non-monomorphized inputs is unchanged." );
       ( "-all-computable",
         Arg.Set all_computable,
         " For Lean: do not insert `noncomputable section` at the top of the \

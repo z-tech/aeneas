@@ -578,6 +578,15 @@ let print_error_diagnostics = ref false
     method names. *)
 let method_names_in_impl_namespace = ref false
 
+(** When Charon's [--monomorphize] pass produces multiple instantiations of the
+    same generic item (e.g. [Foo<TagA>] and [Foo<TagB>]), they collapse to the
+    same extracted name because pattern generation drops the instantiated
+    type-arguments. With this flag set, we append a stable suffix derived from
+    the instantiation's generic arguments so that distinct monomorphizations
+    keep distinct extracted names. Off by default: only useful when extracting
+    crates produced with [--monomorphize]. *)
+let mono_name_suffix = ref false
+
 (** *)
 let all_computable = ref false
 

@@ -1592,7 +1592,20 @@ let ctx_compute_simple_name (meta : T.item_meta) (ctx : extraction_ctx)
     (name : llbc_name) : string list =
   (* Rmk.: initially we only filtered the disambiguators equal to 0 *)
   let name = opt_ctx_prepare_name meta ctx name in
-  name_to_simple_name ctx.trans_ctx name
+  (* When the user opts into per-monomorphization name suffixes (via
+     [-mono-name-suffix]) and the name ends with a [PeInstantiated] elem (as
+     produced by Charon's [--monomorphize] pass), bake the instantiation's
+     type arguments into the extracted name so distinct monomorphizations
+     don't collapse to the same name. Without the flag the path is unchanged,
+     so non-monomorphized inputs are unaffected. See aeneas issue #1032. *)
+  if !Config.mono_name_suffix then
+    match List.rev name with
+    | T.PeInstantiated binder :: rev_rest ->
+        let stripped = List.rev rev_rest in
+        name_with_generics_to_simple_name ctx.trans_ctx stripped
+          binder.binder_params binder.binder_value
+    | _ -> name_to_simple_name ctx.trans_ctx name
+  else name_to_simple_name ctx.trans_ctx name
 
 (** Helper *)
 let ctx_compute_simple_type_name = ctx_compute_simple_name
