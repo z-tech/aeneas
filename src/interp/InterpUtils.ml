@@ -890,7 +890,6 @@ let instantiate_fun_sig (span : Meta.span option) (ctx : eval_ctx)
   in
   let generic_args = visitor#visit_generic_args () generic_args in
   let tr_self = visitor#visit_trait_ref_kind () tr_self in
-  let fresh_regions = List.rev !fresh_regions in
 
   (* Reconstruct the generics *)
   let subst =
@@ -902,6 +901,22 @@ let instantiate_fun_sig (span : Meta.span option) (ctx : eval_ctx)
   let open Substitute in
   let inputs = List.map (st_substitute_visitor#visit_ty subst) inputs in
   let output = st_substitute_visitor#visit_ty subst output in
+
+  (* Workaround for Charon's --monomorphize pass, which can leave [RErased]
+     regions in the input/output types of a function signature, violating the
+     documented invariant that signatures contain non-erased regions. We run
+     a focused visitor to replace each remaining [RErased] with a fresh free
+     region. For non-monomorphized inputs there are no [RErased] regions
+     here, so this step is a no-op. See aeneas issue #1031. *)
+  let erased_region_visitor =
+    object
+      inherit [_] map_ty
+      method! visit_RErased _ = RVar (Free (fresh_region_id ()))
+    end
+  in
+  let inputs = List.map (erased_region_visitor#visit_ty ()) inputs in
+  let output = erased_region_visitor#visit_ty () output in
+  let fresh_regions = List.rev !fresh_regions in
 
   (* Compute the regions hierarchy *)
   let trait_type_constraints, regions_hierarchy =
